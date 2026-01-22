@@ -6,6 +6,12 @@
 
 > **Safety First:** Unlike other AI tools that execute code blindly, `askcmd` generates the command and **copies it to your clipboard**. You paste it, review it, and execute it when ready.
 
+
+
+https://github.com/user-attachments/assets/5f539d58-7bc1-4749-b61f-637047b80d1e
+
+
+
 ## 🚀 Features
 
 * **⚡ Local AI:** Runs entirely offline using Ollama (default: `qwen2.5-coder`).
