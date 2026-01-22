@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+from langchain_ollama import ChatOllama
+from langchain_core.prompts import ChatPromptTemplate
+import sys
+import os
+import shutil
+import subprocess
+
+# --- CONFIGURATION ---
+try:
+    model = ChatOllama(model="qwen2.5-coder:3b", temperature=0)
+except Exception:
+    print("Error: Ensure Ollama is running (try 'ollama serve')")
+    sys.exit(1)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", """You are a Debian/Ubuntu Linux Command Generator.
+    Output ONLY the executable command. 
+    Use 'apt' or 'apt-get' for installations.
+    No markdown. No explanations.
+    If dangerous (like rm -rf /), output: # SAFETY_WARNING
+    The user is currently in: {cwd}"""),
+    ("user", "{question}")
+])
+
+chain = prompt | model 
+
+def copy_to_clipboard(text):
+    """
+    Robust copy function: Tries Wayland first, then falls back to X11 (xclip).
+    """
+    
+    # 1. Try Wayland (wl-copy)
+    if shutil.which("wl-copy"):
+        try:
+            p = subprocess.Popen(
+                ["wl-copy"], 
+                stdin=subprocess.PIPE, 
+                stderr=subprocess.DEVNULL # Silence errors
+            )
+            p.communicate(input=text.encode('utf-8'))
+            if p.returncode == 0:
+                return True
+        except Exception:
+            pass # Just move on to the next one
+
+    # 2. Try X11 (xclip) - THIS IS THE FIX FOR YOUR ISSUE
+    # Even on Wayland, xclip often works via XWayland when wl-copy fails.
+    if shutil.which("xclip"):
+        try:
+            p = subprocess.Popen(
+                ["xclip", "-selection", "clipboard"], 
+                stdin=subprocess.PIPE, 
+                stderr=subprocess.DEVNULL
+            )
+            p.communicate(input=text.encode('utf-8'))
+            if p.returncode == 0:
+                return True
+        except Exception:
+            pass
+
+    return False
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: askcmd <natural language description>")
+        sys.exit(1)
+    
+    user_query = " ".join(sys.argv[1:])
+    current_dir = os.getcwd()
+
+    print(f"\033[90mThinking...\033[0m", end="\r")
+
+    try:
+        result = chain.invoke({"question": user_query, "cwd": current_dir})
+        clean_cmd = result.content.strip().replace("```bash", "").replace("```", "").strip()
+
+        if not clean_cmd:
+            print("Error: AI returned no command.")
+            sys.exit(1)
+            
+        if "# SAFETY_WARNING" in clean_cmd:
+            print("\n\033[31m[AI Refused]\033[0m Request deemed dangerous.")
+            sys.exit(0)
+
+        success = copy_to_clipboard(clean_cmd)
+
+        if success:
+            print(f"\r\033[92m✔ Copied to clipboard:\033[0m {clean_cmd}  ")
+            print("\033[90m(Press Ctrl+Shift+V to paste)\033[0m")
+        else:
+            print(f"\r\033[93m⚠ Command generated but clipboard failed:\033[0m")
+            print(clean_cmd)
+            print("-" * 30)
+            print(" Troubleshooting:")
+            print(" 1. Install xclip: sudo apt install xclip")
+            print(" 2. If using sudo, don't (it blocks clipboard access)")
+
+    except Exception as e:
+        print(f"\nError: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
